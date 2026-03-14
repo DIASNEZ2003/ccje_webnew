@@ -75,10 +75,21 @@ const QuizEngine = ({
     setIsSaving(true);
 
     let calculatedScore = 0;
-    questions.forEach((q, index) => {
-      const ans = selectedAnswers[index];
-      if (ans === q.correctAnswer || ans === q.answer) calculatedScore++;
-    });
+    
+    // --- BUG FIX ---
+    // If submission is forced (anti-cheat violation), penalize with a score of 0.
+    if (forced) {
+      calculatedScore = 0;
+    } else {
+      // Otherwise, calculate score normally. 
+      // Added 'ans &&' to ensure undefined answers don't accidentally match undefined correctAnswers.
+      questions.forEach((q, index) => {
+        const ans = selectedAnswers[index];
+        if (ans && (ans === q.correctAnswer || ans === q.answer)) {
+          calculatedScore++;
+        }
+      });
+    }
 
     setScore(calculatedScore);
     setIsSubmitted(true);

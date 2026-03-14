@@ -46,7 +46,6 @@ const CustomTimePicker = ({ initialTime, onSave, onClose, title }) => {
     onSave(`${formattedHour}:${formattedMinute}`);
   };
 
-  // Scaled down math for 200px circle (center 100)
   const getCoordinates = (index, total) => {
     const radius = 75; 
     const angle = (index * (360 / total) - 90) * (Math.PI / 180);
@@ -108,17 +107,12 @@ const CustomTimePicker = ({ initialTime, onSave, onClose, title }) => {
         {/* Analog Clock Face */}
         <div className="p-5 flex justify-center bg-white relative">
           <div className="w-[200px] h-[200px] bg-gray-100 rounded-full relative">
-            {/* Center Dot */}
             <div className="absolute w-1.5 h-1.5 bg-[#800000] rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"></div>
-            
-            {/* Clock Hand */}
             {activeIndex !== -1 && (
               <svg className="absolute inset-0 pointer-events-none w-full h-full">
                 <line x1="100" y1="100" x2={lineCoords.x} y2={lineCoords.y} stroke="#800000" strokeWidth="1.5" />
               </svg>
             )}
-
-            {/* Numbers */}
             {currentItems.map((val, i) => {
               const coords = getCoordinates(i, 12);
               const isActive = activeValue === val;
@@ -127,9 +121,7 @@ const CustomTimePicker = ({ initialTime, onSave, onClose, title }) => {
                   key={val}
                   onClick={() => mode === 'hours' ? handleHourSelect(val) : handleMinuteSelect(val)}
                   className={`absolute w-7 h-7 -ml-3.5 -mt-3.5 rounded-full flex items-center justify-center text-xs transition-colors z-20 ${
-                    isActive 
-                      ? 'bg-[#800000] text-white font-bold shadow-md' 
-                      : 'text-gray-700 hover:bg-gray-200'
+                    isActive ? 'bg-[#800000] text-white font-bold shadow-md' : 'text-gray-700 hover:bg-gray-200'
                   }`}
                   style={{ left: coords.x, top: coords.y }}
                 >
@@ -217,6 +209,15 @@ const Scheduler = () => {
         
         formattedData.sort((a, b) => new Date(a.date) - new Date(b.date));
         setScheduledExams(formattedData);
+
+        // Update viewingStudents live if modal is open
+        setViewingStudents(prev => {
+          if (prev) {
+            return formattedData.find(e => e.id === prev.id) || null;
+          }
+          return prev;
+        });
+
       } else {
         setScheduledExams([]); 
       }
@@ -319,6 +320,50 @@ const Scheduler = () => {
         console.error("Error deleting schedule:", error);
         alert("Failed to delete schedule.");
       }
+    }
+  };
+
+  // ═════════ RETAKE QUIZ (Clear Violations & Score) ═════════
+  const handleRetakeQuiz = async (scheduleId, student) => {
+    if (!window.confirm(`Are you sure you want to let ${student.name || 'this student'} retake the quiz?\n\nThis will permanently delete their anti-cheat violations and current score for this attempt.`)) {
+      return;
+    }
+
+    try {
+      // 1. Wipe the schedule data for this student so they appear fresh
+      const scheduleStudentRef = ref(db, `exam_schedules/${scheduleId}/enrolledStudents/${student.uid}`);
+      await update(scheduleStudentRef, {
+        score: null,
+        total: null,
+        percentage: null,
+        submittedAt: null,
+        autoSubmitted: null,
+        violationCount: null,
+        lastViolationType: null,
+        lastSubject: null,
+        lastSet: null
+      });
+
+      // 2. Safely format and delete the actual exam result node based on lastSubject and lastSet
+      if (student.lastSubject && student.lastSet) {
+        const subjectKey = String(student.lastSubject).replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
+        const setKey = String(student.lastSet).replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
+        
+        const finalQuizRef = ref(db, `users/${student.uid}/live_exams/final_quiz/${subjectKey}/${setKey}`);
+        await remove(finalQuizRef);
+      }
+
+      // 3. ✨ NEW: Delete any violations logged in the main user profile node
+      const userRootRef = ref(db, `users/${student.uid}`);
+      await update(userRootRef, {
+        violationCount: null,
+        lastViolationType: null,
+        autoSubmitted: null
+      });
+
+    } catch (error) {
+      console.error("Error resetting student quiz:", error);
+      alert("Failed to reset student. Check console for details.");
     }
   };
 
@@ -606,7 +651,7 @@ const Scheduler = () => {
                     const vCount         = student.violationCount || 0;
                     const wasAutoSubmit  = student.autoSubmitted || false;
                     const lastVType      = student.lastViolationType || null;
-                    const hasScore       = student.score !== undefined;
+                    const hasScore       = student.score !== undefined && student.score !== null;
 
                     // Colour-code by violation severity
                     const violBg    = vCount === 0 ? 'bg-emerald-50 border-emerald-100'
@@ -666,14 +711,31 @@ const Scheduler = () => {
                           </div>
                         )}
 
-                        {/* Score row — shows if student submitted */}
-                        {hasScore && (
-                          <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
-                            <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Score:</span>
-                            <span className={`text-[10px] font-black ${student.percentage >= 75 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {student.score}/{student.total} ({student.percentage}%)
-                            </span>
+                        {/* Combined Actions/Score row */}
+                        {(hasScore || vCount > 0) && (
+                          <div className="mt-2 pt-2 border-t border-gray-200/60 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              {hasScore ? (
+                                <>
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Score:</span>
+                                  <span className={`text-[10px] font-black ${student.percentage >= 75 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {student.score}/{student.total} ({student.percentage}%)
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-[9px] font-bold text-gray-400 italic">Not submitted yet</span>
+                              )}
+                            </div>
+                            
+                            {/* RETAKE BUTTON */}
+                            <button
+                              onClick={() => handleRetakeQuiz(viewingStudents.id, student)}
+                              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 text-[#800000] rounded text-[9px] font-black uppercase tracking-widest hover:bg-[#f4e8e8] hover:border-[#800000] transition-colors shadow-sm active:scale-95"
+                              title="Delete score & violations to allow retake"
+                            >
+                              <RefreshCcw className="w-3 h-3" /> Retake
+                            </button>
                           </div>
                         )}
                       </div>

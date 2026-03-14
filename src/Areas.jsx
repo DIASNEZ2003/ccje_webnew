@@ -244,16 +244,7 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Licensure Areas</h2>
-          <p className="text-xs text-gray-500 mt-1 font-medium">Questions are randomized uniquely for your account.</p>
-        </div>
-        <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
-          <Shuffle className="text-gray-400 w-4 h-4" />
-        </div>
-      </div>
+     
 
       {/* Area cards */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
