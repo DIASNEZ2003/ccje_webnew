@@ -64,7 +64,7 @@ const CustomTimePicker = ({ initialTime, onSave, onClose, title }) => {
   const lineCoords = activeIndex !== -1 ? getCoordinates(activeIndex, 12) : { x: 100, y: 100 - 75 };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-[260px] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
@@ -203,7 +203,6 @@ const Scheduler = () => {
             status: schedule.status || 'active',
             isCompleted: isAutoCompleted || isManuallyCompleted,
             studentsList, 
-            enrolled: studentsList.length || schedule.enrolled || 0 
           };
         });
         
@@ -347,13 +346,13 @@ const Scheduler = () => {
       // 2. Safely format and delete the actual exam result node based on lastSubject and lastSet
       if (student.lastSubject && student.lastSet) {
         const subjectKey = String(student.lastSubject).replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
-        const setKey = String(student.lastSet).replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
+        const setKey = String(student.lastSet).replace(/\s+/g, '_');
         
         const finalQuizRef = ref(db, `users/${student.uid}/live_exams/final_quiz/${subjectKey}/${setKey}`);
         await remove(finalQuizRef);
       }
 
-      // 3. ✨ NEW: Delete any violations logged in the main user profile node
+      // 3. Delete any violations logged in the main user profile node
       const userRootRef = ref(db, `users/${student.uid}`);
       await update(userRootRef, {
         violationCount: null,
@@ -367,9 +366,24 @@ const Scheduler = () => {
     }
   };
 
+  // ── HELPER: Filters out educators and admins from lists ──
+  const getValidStudents = (studentsList) => {
+    if (!studentsList) return [];
+    return studentsList.filter(student => {
+      const userProfile = usersMap[student.uid];
+      if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'educator')) {
+        return false; // Skip admins and educators
+      }
+      return true; // Keep everyone else (students)
+    });
+  };
+
   const activeExams = scheduledExams.filter(exam => !exam.isCompleted);
   const completedExams = scheduledExams.filter(exam => exam.isCompleted);
   const displayExams = activeTab === 'active' ? activeExams : completedExams;
+
+  // Calculate modal students strictly avoiding Admins/Educators
+  const modalValidStudents = viewingStudents ? getValidStudents(viewingStudents.studentsList) : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-4 relative font-['Inter',sans-serif]">
@@ -529,77 +543,82 @@ const Scheduler = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {displayExams.map((exam) => (
-                    <tr key={exam.id} className={`transition-colors ${exam.isCompleted ? 'bg-gray-50/50' : 'hover:bg-[#f4e8e8]/30'}`}>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col">
-                          <span className={`text-xs font-black ${exam.isCompleted ? 'text-gray-500' : 'text-gray-900'}`}>{exam.date}</span>
-                          <span className="text-[10px] text-slate-500 font-bold mt-1 flex items-center">
-                            <Clock className="w-3 h-3 mr-1 opacity-70" />
-                            {formatTime(exam.time)} - {exam.endTime ? formatTime(exam.endTime) : '?'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className={`flex items-center ${exam.isCompleted ? 'opacity-50' : ''}`}>
-                          <div className="bg-gray-100 p-1 rounded-md mr-2">
-                            <Users className="w-3 h-3 text-gray-500" />
+                  {displayExams.map((exam) => {
+                    const validStudents = getValidStudents(exam.studentsList);
+                    const validEnrolledCount = validStudents.length;
+
+                    return (
+                      <tr key={exam.id} className={`transition-colors ${exam.isCompleted ? 'bg-gray-50/50' : 'hover:bg-[#f4e8e8]/30'}`}>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col">
+                            <span className={`text-xs font-black ${exam.isCompleted ? 'text-gray-500' : 'text-gray-900'}`}>{exam.date}</span>
+                            <span className="text-[10px] text-slate-500 font-bold mt-1 flex items-center">
+                              <Clock className="w-3 h-3 mr-1 opacity-70" />
+                              {formatTime(exam.time)} - {exam.endTime ? formatTime(exam.endTime) : '?'}
+                            </span>
                           </div>
-                          <span className={`text-xs font-black ${exam.isCompleted ? 'text-gray-500' : 'text-gray-900'}`}>{exam.capacity}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button 
-                          onClick={() => setViewingStudents(exam)}
-                          className={`flex items-center font-bold px-2.5 py-1.5 rounded-lg text-[10px] transition-all ${
-                            exam.isCompleted 
-                              ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                              : exam.enrolled >= exam.capacity 
-                                ? 'bg-[#f4e8e8] text-[#800000] hover:bg-[#e2c7c7]' 
-                                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                          }`}
-                        >
-                          <Eye className="w-3 h-3 mr-1.5 opacity-80" />
-                          {exam.enrolled} / {exam.capacity}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        {exam.isCompleted ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] uppercase tracking-wider font-black bg-gray-100 text-gray-500 border border-gray-200">
-                            {exam.status === 'completed' ? 'Force Closed' : 'Finished'}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] uppercase tracking-wider font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Active
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right flex justify-end gap-1.5">
-                        {!exam.isCompleted ? (
-                          <>
-                            <button onClick={() => toggleScheduleStatus(exam.id, exam.isCompleted)} className="p-2 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Force Complete">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleEdit(exam)} className="p-2 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Edit">
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(exam.id)} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Delete">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={() => toggleScheduleStatus(exam.id, exam.isCompleted)} className="p-2 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Re-Enable">
-                              <RefreshCcw className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(exam.id)} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Delete">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className={`flex items-center ${exam.isCompleted ? 'opacity-50' : ''}`}>
+                            <div className="bg-gray-100 p-1 rounded-md mr-2">
+                              <Users className="w-3 h-3 text-gray-500" />
+                            </div>
+                            <span className={`text-xs font-black ${exam.isCompleted ? 'text-gray-500' : 'text-gray-900'}`}>{exam.capacity}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button 
+                            onClick={() => setViewingStudents(exam)}
+                            className={`flex items-center font-bold px-2.5 py-1.5 rounded-lg text-[10px] transition-all ${
+                              exam.isCompleted 
+                                ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                : validEnrolledCount >= exam.capacity 
+                                  ? 'bg-[#f4e8e8] text-[#800000] hover:bg-[#e2c7c7]' 
+                                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            }`}
+                          >
+                            <Eye className="w-3 h-3 mr-1.5 opacity-80" />
+                            {validEnrolledCount} / {exam.capacity}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          {exam.isCompleted ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] uppercase tracking-wider font-black bg-gray-100 text-gray-500 border border-gray-200">
+                              {exam.status === 'completed' ? 'Force Closed' : 'Finished'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] uppercase tracking-wider font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right flex justify-end gap-1.5">
+                          {!exam.isCompleted ? (
+                            <>
+                              <button onClick={() => toggleScheduleStatus(exam.id, exam.isCompleted)} className="p-2 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Force Complete">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleEdit(exam)} className="p-2 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Edit">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(exam.id)} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => toggleScheduleStatus(exam.id, exam.isCompleted)} className="p-2 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Re-Enable">
+                                <RefreshCcw className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(exam.id)} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-gray-100 shadow-sm" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -644,8 +663,8 @@ const Scheduler = () => {
             {/* Student List */}
             <div className="p-4 overflow-y-auto flex-1 bg-white">
               <div className="space-y-2.5">
-                {viewingStudents.studentsList && viewingStudents.studentsList.length > 0 ? (
-                  viewingStudents.studentsList.map((student, idx) => {
+                {modalValidStudents && modalValidStudents.length > 0 ? (
+                  modalValidStudents.map((student, idx) => {
                     const userProfile    = usersMap[student.uid] || {};
                     const profilePic     = userProfile.profileImage || userProfile.profilePicture;
                     const vCount         = student.violationCount || 0;
@@ -757,11 +776,11 @@ const Scheduler = () => {
               <div className="flex gap-4 pl-2">
                 <div className="flex flex-col">
                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Capacity</span>
-                  <span className="text-xs font-bold text-[#800000]">{viewingStudents.studentsList?.length || 0} / {viewingStudents.capacity}</span>
+                  <span className="text-xs font-bold text-[#800000]">{modalValidStudents.length} / {viewingStudents.capacity}</span>
                 </div>
                 {/* Count students with violations */}
                 {(() => {
-                  const withViolations = viewingStudents.studentsList?.filter(s => (s.violationCount || 0) > 0).length || 0;
+                  const withViolations = modalValidStudents.filter(s => (s.violationCount || 0) > 0).length;
                   return withViolations > 0 ? (
                     <div className="flex flex-col">
                       <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Violations</span>

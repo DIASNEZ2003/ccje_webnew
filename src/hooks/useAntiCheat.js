@@ -47,7 +47,6 @@ const useAntiCheat = ({
         fullscreen:  'Fullscreen Exit',
         copy_paste:  'Copy/Paste',
         print:       'Print Attempt',
-        right_click: 'Right Click',
         devtools:    'DevTools',
       }[type] || 'Unknown',
     };
@@ -158,15 +157,12 @@ const useAntiCheat = ({
       if (e.key === 'PrintScreen')                      { e.preventDefault(); triggerViolation('copy_paste'); return; }
     };
 
-    // 5. Right-click
-    const handleContextMenu = (e) => { e.preventDefault(); triggerViolation('right_click'); };
-
-    // 6. Clipboard
+    // 5. Clipboard
     const handleCopy  = (e) => { e.preventDefault(); triggerViolation('copy_paste'); };
     const handlePaste = (e) => { e.preventDefault(); triggerViolation('copy_paste'); };
     const handleCut   = (e) => { e.preventDefault(); triggerViolation('copy_paste'); };
 
-    // 7. Fullscreen change
+    // 6. Fullscreen change
     const handleFullscreenChange = () => {
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
       const inFs = !!fsEl;
@@ -179,7 +175,6 @@ const useAntiCheat = ({
     window.addEventListener  ('blur',                    handleWindowBlur);
     window.addEventListener  ('focus',                   handleWindowFocus);
     document.addEventListener('keydown',                 handleKeyDown,    true);
-    document.addEventListener('contextmenu',             handleContextMenu);
     document.addEventListener('copy',                    handleCopy);
     document.addEventListener('paste',                   handlePaste);
     document.addEventListener('cut',                     handleCut);
@@ -195,7 +190,6 @@ const useAntiCheat = ({
       window.removeEventListener  ('blur',                   handleWindowBlur);
       window.removeEventListener  ('focus',                  handleWindowFocus);
       document.removeEventListener('keydown',                handleKeyDown,    true);
-      document.removeEventListener('contextmenu',            handleContextMenu);
       document.removeEventListener('copy',                   handleCopy);
       document.removeEventListener('paste',                  handlePaste);
       document.removeEventListener('cut',                    handleCut);

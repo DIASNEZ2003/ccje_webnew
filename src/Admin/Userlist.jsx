@@ -4,7 +4,7 @@ import { db } from "../Firebase";
 import { 
   Eye, Edit, Trash2, Save, X, Filter, User, Mail, 
   GraduationCap, Briefcase, MapPin, Phone, UserCircle,
-  Users, VenusAndMars, Award, CheckCircle, Clock, Check, XCircle, Search
+  Users, VenusAndMars, Award, CheckCircle, Clock, Check, XCircle, Search, FileText
 } from "lucide-react";
 
 const UserList = () => {
@@ -21,39 +21,103 @@ const UserList = () => {
   const [genderFilter, setGenderFilter] = useState("all");
   const [loading, setLoading] = useState(true);
 
-  const getScoreStats = (liveExamProgress) => {
+  // New states for the Subject Breakdown Modal
+  const [showBreakdownModal, setShowBreakdownModal] = useState(false);
+  const [breakdownUser, setBreakdownUser] = useState(null);
+
+  // Helper to find scores in BOTH practice and diagnostic formats
+  const getScoreStats = (progressData) => {
     let correct = 0;
-    let wrong = 0;
+    let totalItems = 0;
     
-    if (!liveExamProgress) return { correct: 0, wrong: 0, total: 0, percentage: 0 };
+    if (!progressData) return { correct: 0, wrong: 0, total: 0, percentage: 0 };
 
     const findScores = (obj) => {
       if (!obj || typeof obj !== 'object') return;
-      if ('correct' in obj || 'wrong' in obj) {
+      
+      // Format 1: Practice Exam (uses 'correct' and 'wrong')
+      if ('correct' in obj && 'wrong' in obj) {
         correct += (Number(obj.correct) || 0);
-        wrong += (Number(obj.wrong) || 0);
-      } else {
+        totalItems += (Number(obj.correct) || 0) + (Number(obj.wrong) || 0);
+      } 
+      // Format 2: Diagnostic/Final Quiz (uses 'score' and 'total')
+      else if ('score' in obj && 'total' in obj && 'setName' in obj) {
+        correct += (Number(obj.score) || 0);
+        totalItems += (Number(obj.total) || 0);
+      } 
+      // Otherwise keep digging deeper into the object
+      else {
         Object.values(obj).forEach(val => findScores(val));
       }
     };
 
-    findScores(liveExamProgress);
-    const total = correct + wrong;
-    const percentage = total > 0 ? Math.round((correct / total) * 100) : 0;
+    findScores(progressData);
+    
+    const percentage = totalItems > 0 ? Math.round((correct / totalItems) * 100) : 0;
+    const wrong = totalItems - correct;
 
-    return { correct, wrong, total, percentage };
+    return { correct, wrong, total: totalItems, percentage };
   };
 
   const getFinalExamStats = (user) => {
-    const finalData = user.diagnostic_exam_progress || user.final_exam_progress || user.final_exam_score;
+    const finalData = user.live_exams?.final_quiz || user.diagnostic_exam_progress || user.final_exam_progress || user.final_exam_score;
+    
     if (!finalData) return { display: "Not Taken", percentage: 0 };
-
     if (typeof finalData === 'number') return { display: `${finalData}%`, percentage: finalData };
-    if (finalData.score) return { display: `${finalData.score}`, percentage: Number(finalData.score) };
 
     const stats = getScoreStats(finalData);
     if (stats.total === 0) return { display: "Not Taken", percentage: 0 };
-    return { display: `${stats.correct} / ${stats.total} (${stats.percentage}%)`, percentage: stats.percentage };
+    
+    return { display: `${stats.percentage}% (${stats.correct}/${stats.total})`, percentage: stats.percentage };
+  };
+
+  // ── HELPER: Get Diagnostic Score Breakdown by Subject AND Set ──
+  const getSubjectBreakdown = (user) => {
+    const finalQuiz = user.live_exams?.final_quiz;
+    if (!finalQuiz) return [];
+
+    const breakdown = [];
+    Object.keys(finalQuiz).forEach(subjectKey => {
+      const sets = finalQuiz[subjectKey];
+      let actualSubjectName = subjectKey.replace(/_/g, ' '); // Fallback
+      
+      const subjectSets = [];
+      let totalSetsScore = 0;
+      let totalSetsMax = 0;
+
+      // Loop through sets (Set A, Set B, etc.) for this subject
+      Object.keys(sets).forEach(setKey => {
+        const setData = sets[setKey];
+        if (setData.subject) actualSubjectName = setData.subject;
+        
+        const setScore = Number(setData.score) || 0;
+        const setTotal = Number(setData.total) || 0;
+        const setPercentage = setTotal > 0 ? Math.round((setScore / setTotal) * 100) : 0;
+        
+        totalSetsScore += setScore;
+        totalSetsMax += setTotal;
+
+        subjectSets.push({
+          setName: setData.setName || setKey.replace(/_/g, ' '),
+          score: setScore,
+          total: setTotal,
+          percentage: setPercentage
+        });
+      });
+
+      // Sort sets alphabetically (Set A, Set B, etc.)
+      subjectSets.sort((a, b) => a.setName.localeCompare(b.setName));
+
+      breakdown.push({
+        subjectKey,
+        subjectName: actualSubjectName,
+        totalScore: totalSetsScore,
+        totalMax: totalSetsMax,
+        sets: subjectSets
+      });
+    });
+
+    return breakdown;
   };
 
   useEffect(() => {
@@ -173,6 +237,17 @@ const UserList = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setSelectedUser(null);
+  };
+
+  // Handlers for Breakdown Modal
+  const handleViewBreakdown = (user) => {
+    setBreakdownUser(user);
+    setShowBreakdownModal(true);
+  };
+
+  const closeBreakdownModal = () => {
+    setShowBreakdownModal(false);
+    setBreakdownUser(null);
   };
 
   const filteredActiveUsers = getFilteredActiveUsers();
@@ -384,11 +459,23 @@ const UserList = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center">
-                              <Award className={`w-3.5 h-3.5 mr-1.5 ${finalStats.display === 'Not Taken' ? 'text-gray-300' : 'text-[#800000]'}`} />
-                              <span className={`text-xs font-bold ${finalStats.display === 'Not Taken' ? 'text-gray-400' : 'text-gray-900'}`}>
-                                {finalStats.display}
-                              </span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center">
+                                <Award className={`w-3.5 h-3.5 mr-1.5 ${finalStats.display === 'Not Taken' ? 'text-gray-300' : 'text-[#800000]'}`} />
+                                <span className={`text-xs font-bold ${finalStats.display === 'Not Taken' ? 'text-gray-400' : 'text-gray-900'}`}>
+                                  {finalStats.display}
+                                </span>
+                              </div>
+                              {/* New Button for Subject Breakdown */}
+                              {finalStats.display !== 'Not Taken' && (
+                                <button 
+                                  onClick={() => handleViewBreakdown(user)}
+                                  className="px-2 py-1 bg-[#f4e8e8] text-[#800000] text-[9px] font-black uppercase tracking-widest rounded hover:bg-[#e2c7c7] transition-colors border border-[#e2c7c7] flex items-center"
+                                  title="View Subject Breakdown"
+                                >
+                                  <FileText className="w-2.5 h-2.5 mr-1" /> Details
+                                </button>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3 pr-5 text-right">
@@ -568,7 +655,7 @@ const UserList = () => {
           USER DETAILS MODAL (VIEW) - COMPACT ID CARD STYLE
       ────────────────────────────────────────────────────────────────── */}
       {isModalOpen && selectedUser && (
-        <div className="fixed inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-50 p-4 animate-in fade-in duration-200 font-['Inter',sans-serif]">
+        <div className="fixed inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-[50] p-4 animate-in fade-in duration-200 font-['Inter',sans-serif]">
           <div className="bg-white rounded-xl w-full max-w-[500px] overflow-hidden shadow-2xl transform scale-100">
             
             {/* Header / Banner */}
@@ -659,7 +746,17 @@ const UserList = () => {
                       </p>
                     </div>
                     <div className="bg-white p-2 rounded-md border border-gray-100 shadow-sm border-l-2 border-l-[#800000]">
-                      <p className="text-[9px] text-gray-500 uppercase font-bold mb-0.5">Diagnostic Final</p>
+                      <div className="flex justify-between items-center mb-0.5">
+                        <p className="text-[9px] text-gray-500 uppercase font-bold">Diagnostic Final</p>
+                        {getFinalExamStats(selectedUser).display !== 'Not Taken' && (
+                          <button 
+                            onClick={() => handleViewBreakdown(selectedUser)} 
+                            className="text-[9px] text-[#800000] hover:underline font-black uppercase"
+                          >
+                            View Breakdown
+                          </button>
+                        )}
+                      </div>
                       <p className={`text-base font-black ${getFinalExamStats(selectedUser).display === 'Not Taken' ? 'text-gray-400' : 'text-[#800000]'}`}>
                         {getFinalExamStats(selectedUser).display}
                       </p>
@@ -681,6 +778,112 @@ const UserList = () => {
           </div>
         </div>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────────
+          DIAGNOSTIC EXAM BREAKDOWN MODAL (SUBJECTS & SETS)
+      ────────────────────────────────────────────────────────────────── */}
+      {showBreakdownModal && breakdownUser && (
+        <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200 font-['Inter',sans-serif]">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl relative flex flex-col max-h-[85vh] overflow-hidden border border-gray-100">
+
+            {/* Header */}
+            <div className="p-4 border-b border-gray-100 flex justify-between items-start bg-gray-50/80">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center">
+                  <div className="bg-[#e2c7c7] p-1.5 rounded-lg mr-2.5 shadow-sm">
+                    <Award className="w-4 h-4 text-[#800000]" />
+                  </div>
+                  Diagnostic Breakdown
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-1.5 font-bold flex items-center">
+                  <User className="w-3 h-3 mr-1 opacity-70" />
+                  {breakdownUser.firstName} {breakdownUser.lastName}
+                </p>
+              </div>
+              <button
+                onClick={closeBreakdownModal}
+                className="p-2 bg-white border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors shadow-sm"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Legend */}
+            <div className="px-4 pt-3 pb-0 flex items-center gap-3 text-[9px] font-bold uppercase tracking-widest text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span> Passed (≥75%)</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"></span> Failed (&#60;75%)</span>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 overflow-y-auto flex-1 bg-white">
+              <div className="space-y-4">
+                {getSubjectBreakdown(breakdownUser).length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-gray-100 shadow-sm">
+                      <Award className="w-5 h-5 text-gray-300" />
+                    </div>
+                    <p className="text-xs font-bold text-gray-500">No detailed subject data available.</p>
+                  </div>
+                ) : (
+                  getSubjectBreakdown(breakdownUser).map((subject, idx) => (
+                    <div key={idx} className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                      
+                      {/* Subject Header */}
+                      <div className="bg-gray-100/50 p-3 border-b border-gray-200 flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-gray-900 truncate pr-2">{subject.subjectName}</h4>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 shrink-0">
+                          {subject.totalScore} / {subject.totalMax}
+                        </span>
+                      </div>
+
+                      {/* Sets List */}
+                      <div className="divide-y divide-gray-100">
+                        {subject.sets.map((set, setIdx) => {
+                          const isPassed = set.percentage >= 75;
+                          const dotColor = isPassed ? 'bg-emerald-400' : 'bg-red-500';
+                          const textColor = isPassed ? 'text-emerald-600' : 'text-red-600';
+
+                          return (
+                            <div key={setIdx} className="p-3 bg-white flex items-center justify-between hover:bg-gray-50 transition-colors">
+                              <div className="flex items-center gap-2.5">
+                                <FileText className="w-3.5 h-3.5 text-gray-400" />
+                                <div>
+                                  <p className="text-[11px] font-bold text-gray-800">{set.setName}</p>
+                                  <p className="text-[9px] text-gray-500 font-medium">Score: {set.score} / {set.total}</p>
+                                </div>
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black tracking-widest ${textColor}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span>
+                                {set.percentage}%
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+              <div className="flex flex-col pl-2">
+                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Subjects</span>
+                <span className="text-xs font-bold text-[#800000]">{getSubjectBreakdown(breakdownUser).length}</span>
+              </div>
+              <button
+                onClick={closeBreakdownModal}
+                className="px-5 py-2 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold rounded-lg text-xs transition-colors shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -3,9 +3,9 @@ import { ref, onValue } from 'firebase/database';
 import { db } from './Firebase';
 import QuizEngine from './QuizEngine';
 import {
-  Shield, ChevronRight, Lock, Loader2, Shuffle, Target,
+  Shield, ChevronRight, Lock, Loader2, Target,
   CalendarX, Calendar, Clock, AlertTriangle, CheckCircle,
-  CheckSquare, BookOpen
+  CheckSquare, BookOpen, ShieldAlert, Eye, X
 } from 'lucide-react';
 
 const SET_ORDER = ['Set A', 'Set B', 'Set C'];
@@ -21,6 +21,10 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
   const [enrollmentStatus,      setEnrollmentStatus]      = useState('checking');
   const [enrolledSchedule,      setEnrolledSchedule]      = useState(null);
   const [showNotEnrolledModal,  setShowNotEnrolledModal]  = useState(false);
+
+  // Pre-Exam Warning
+  const [showPreExamWarning,    setShowPreExamWarning]    = useState(false);
+  const [pendingExam,           setPendingExam]           = useState(null);
 
   const diagnosticAreas = [
     { label: "Criminal Jurisprudence", node: "Criminal_Jurisprudence" },
@@ -110,19 +114,18 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
   }, [userUID]);
 
   // ── Get the next set a student should take for an area ──
-  // Returns { setName, questions } or null if all sets done / no sets available
   const getNextSet = (areaNode, areaLabel) => {
     const areaData    = examData[areaNode] || {};
     const subjectKey  = areaLabel.replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
-    const doneSets    = completedSets[subjectKey] || []; // e.g. ['Set_A']
+    const doneSets    = completedSets[subjectKey] || [];
 
     for (const setName of SET_ORDER) {
-      const setKey = setName.replace(/\s+/g, '_'); // 'Set A' → 'Set_A'
-      if (!areaData[setName]) continue;            // set doesn't exist in Firebase
-      if (doneSets.includes(setKey)) continue;     // already completed
+      const setKey = setName.replace(/\s+/g, '_');
+      if (!areaData[setName]) continue;
+      if (doneSets.includes(setKey)) continue;
       return { setName, questions: areaData[setName] };
     }
-    return null; // all available sets completed
+    return null; 
   };
 
   // ── Get status label for card badge ──
@@ -135,13 +138,15 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
     return { doneCnt, totalSets };
   };
 
+  // ── Trigger the Pre-Exam Warning instead of starting immediately ──
   const handleStartExam = (areaNode, areaLabel) => {
     if (enrollmentStatus === 'not_enrolled') { setShowNotEnrolledModal(true); return; }
 
     const next = getNextSet(areaNode, areaLabel);
-    if (!next) return; // all done — button should be hidden anyway
+    if (!next) return;
 
-    setActiveQuiz({
+    // Save exam details temporarily
+    setPendingExam({
       areaNode,
       areaLabel,
       title:      `${areaLabel} — ${next.setName}`,
@@ -150,17 +155,31 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
       questions:  next.questions,
       scheduleId: enrolledSchedule?.id || null,
     });
-    if (onExamStart) onExamStart();
+    
+    // Show the anti-cheat warning modal
+    setShowPreExamWarning(true);
+  };
+
+  // ── Confirm Start after reading the warning ──
+  const confirmStartExam = () => {
+    if (pendingExam) {
+      setActiveQuiz(pendingExam);
+      if (onExamStart) onExamStart();
+    }
+    setShowPreExamWarning(false);
+    setPendingExam(null);
+  };
+
+  // ── Cancel Start ──
+  const cancelStartExam = () => {
+    setShowPreExamWarning(false);
+    setPendingExam(null);
   };
 
   // Called by QuizEngine when student finishes/submits
-  // Automatically advance to next set or return to areas list
   const handleQuizDone = (areaNode, areaLabel, completedSetName) => {
-    // Figure out what comes next
     const areaData   = examData[areaNode] || {};
     const subjectKey = areaLabel.replace(/[.$#[\]/]/g, '_').replace(/\s+/g, '_');
-    // The set the student just finished is now saved in Firebase so completedSets
-    // will update via the listener. We compute next manually right now:
     const justDoneKey = completedSetName.replace(/\s+/g, '_');
     const currentDone = [...(completedSets[subjectKey] || []), justDoneKey];
 
@@ -184,7 +203,6 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
         questions:  nextSet.questions,
         scheduleId: enrolledSchedule?.id || null,
       });
-      // Keep sidebar locked — still in exam
     } else {
       // All sets done for this area — go back to areas list
       setActiveQuiz(null);
@@ -192,7 +210,6 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
     }
   };
 
-  // Back to areas without finishing (e.g. anti-cheat force-submit already saved)
   const handleQuizClose = () => {
     setActiveQuiz(null);
     if (onExamEnd) onExamEnd();
@@ -243,8 +260,6 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
           </div>
         </div>
       )}
-
-     
 
       {/* Area cards */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -397,6 +412,80 @@ const Areas = ({ userUID, onExamStart, onExamEnd }) => {
           </div>
         )}
       </div>
+
+      {/* ── Pre-Exam Warning Modal (Anti-Cheat Rules) ── */}
+      {showPreExamWarning && pendingExam && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200 font-['Inter',sans-serif]">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-gray-200 animate-in zoom-in-95 duration-200">
+            
+            {/* Header */}
+            <div className="px-6 py-5 flex items-center gap-4 bg-white border-b border-gray-100">
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-[#800000]/10 shrink-0">
+                <ShieldAlert className="w-6 h-6 text-[#800000]" />
+              </div>
+              <div>
+                <h2 className="font-['Playfair_Display',serif] text-xl font-bold tracking-tight text-gray-900">
+                  Anti-Cheat Active
+                </h2>
+                <p className="text-gray-500 text-sm font-medium mt-0.5">
+                  Review the rules before starting
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-5 space-y-5">
+              
+              <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-sm text-red-800 font-medium flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+                <p>
+                  You are about to start <strong className="font-bold text-[#800000]">{pendingExam.title}</strong>. 
+                  Strict monitoring will begin immediately. <strong>3 violations will automatically submit your exam.</strong>
+                </p>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Eye className="w-4 h-4 text-gray-400" />
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                    Prohibited Actions
+                  </span>
+                </div>
+                <ul className="space-y-3">
+                  {[
+                    { icon: '🔀', text: 'Switching browser tabs or using Alt+Tab' },
+                    { icon: '🖥️', text: 'Opening other applications (Chrome, files, etc.)' },
+                    { icon: '⛶',  text: 'Exiting fullscreen mode manually' },
+                    { icon: '📋', text: 'Using copy, paste, cut, or print shortcuts' },
+                    { icon: '🔧', text: 'Opening Developer Tools' },
+                  ].map(({ icon, text }) => (
+                    <li key={text} className="flex items-center gap-3 text-sm font-medium text-gray-600">
+                      <span className="text-base leading-none">{icon}</span>
+                      {text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={cancelStartExam}
+                  className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-bold tracking-wide shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmStartExam}
+                  className="flex-[2] py-3 bg-[#800000] text-white rounded-lg text-sm font-bold tracking-wide shadow-sm transition-colors hover:bg-[#6a0000] focus:outline-none focus:ring-2 focus:ring-[#800000] focus:ring-offset-2"
+                >
+                  I Agree — Start Exam
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Not Enrolled Modal */}
       {showNotEnrolledModal && (
