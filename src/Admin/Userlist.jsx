@@ -320,8 +320,8 @@ const UserList = () => {
       {activeTab === 'active' && (
         <div className="space-y-4 animate-in fade-in duration-300">
           
-          {/* STATS CARDS */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* STATS CARDS - Updated to grid-cols-5 for the new card */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Total Active</p>
@@ -341,6 +341,19 @@ const UserList = () => {
               </div>
               <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
                 <Award className="w-5 h-5 text-emerald-500" />
+              </div>
+            </div>
+
+            {/* NEW STAT CARD: Passed Diagnostic */}
+            <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Passed Diagnostic</p>
+                <p className="text-2xl font-black text-[#800000]">
+                  {activeUsers.filter(u => getFinalExamStats(u).percentage >= 75).length}
+                </p>
+              </div>
+              <div className="w-10 h-10 bg-[#e2c7c7] rounded-lg flex items-center justify-center">
+                <CheckCircle className="w-5 h-5 text-[#800000]" />
               </div>
             </div>
             

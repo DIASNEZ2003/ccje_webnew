@@ -1,14 +1,11 @@
-import React, { useState } from 'react';
-// Import the useNavigate hook from React Router
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-// Import Firebase auth functions and your auth instance
-import { signInWithEmailAndPassword } from 'firebase/auth';
-// Import Firebase Realtime Database functions for role checking
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { getDatabase, ref, get } from 'firebase/database'; 
-import { auth } from './Firebase'; // <-- Ensure this path points to your firebase config file
+import { auth } from './Firebase'; 
+import { Eye, EyeOff } from 'lucide-react'; // <-- Imported icons for the password toggle
 
 const Login = () => {
-  // Initialize the navigate function
   const navigate = useNavigate();
 
   // State for form inputs and UI feedback
@@ -16,10 +13,53 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // New States for features
+  const [showPassword, setShowPassword] = useState(false);
+  const [initializing, setInitializing] = useState(true); // Prevents flickering while checking auto-login
 
-  // Handle form submission
+  // --- AUTO LOGIN LOGIC ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          // If user is already logged in, fetch their role
+          const db = getDatabase();
+          const userRef = ref(db, `users/${user.uid}`);
+          const snapshot = await get(userRef);
+
+          if (snapshot.exists()) {
+            const userData = snapshot.val();
+            const role = userData.role || 'noRole';
+
+            // Auto route based on role
+            if (role === 'admin') {
+              navigate('/admin');
+            } else if (role === 'educator') {
+              navigate('/educator');
+            } else {
+              navigate('/dashboard');
+            }
+          } else {
+            navigate('/dashboard');
+          }
+        } catch (err) {
+          console.error("Auto-login error:", err);
+          setInitializing(false);
+        }
+      } else {
+        // No user is logged in, show the login form
+        setInitializing(false);
+      }
+    });
+
+    // Cleanup the listener on unmount
+    return () => unsubscribe();
+  }, [navigate]);
+
+  // --- HANDLE MANUAL LOGIN ---
   const handleLogin = async (e) => {
-    e.preventDefault(); // Prevents the page from refreshing
+    e.preventDefault(); 
     setError('');
     setLoading(true);
 
@@ -28,8 +68,6 @@ const Login = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      console.log("Logged in successfully:", user.uid);
-      
       // 2. Fetch the user's data from Firebase Realtime Database to check their role
       const db = getDatabase();
       const userRef = ref(db, `users/${user.uid}`);
@@ -37,7 +75,7 @@ const Login = () => {
 
       if (snapshot.exists()) {
         const userData = snapshot.val();
-        const role = userData.role || 'noRole'; // Fallback to 'noRole' if undefined
+        const role = userData.role || 'noRole'; 
 
         // 3. Route based on the fetched role
         if (role === 'admin') {
@@ -45,27 +83,31 @@ const Login = () => {
         } else if (role === 'educator') {
           navigate('/educator');
         } else {
-          // Covers 'noRole' or any standard student account
           navigate('/dashboard');
         }
       } else {
-        // If the user exists in Auth but has no database record, default to standard dashboard
-        console.warn("No user data found in database. Defaulting to standard dashboard.");
         navigate('/dashboard');
       }
       
     } catch (err) {
       console.error("Login Error:", err.code);
-      // Set a user-friendly error message based on Firebase error codes
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         setError("Invalid email or password. Please try again.");
       } else {
         setError("Failed to sign in. Please check your connection.");
       }
-    } finally {
-      setLoading(false);
-    }
+      setLoading(false); // Only set loading to false if there's an error (otherwise it redirects)
+    } 
   };
+
+  // Show a blank screen or a loading spinner while Firebase checks for an existing session
+  if (initializing) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA]">
+        <div className="h-10 w-10 animate-spin rounded-full border-3 border-gray-200 border-t-[#800000]"></div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -157,9 +199,7 @@ const Login = () => {
                   <label className="text-sm font-semibold text-gray-700">
                     Password
                   </label>
-                  <a href="#" className="text-xs font-semibold text-[#800000] hover:text-[#600000] hover:underline">
-                    Forgot Password?
-                  </a>
+                 
                 </div>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
@@ -168,13 +208,21 @@ const Login = () => {
                     </svg>
                   </div>
                   <input 
-                    type="password" 
+                    type={showPassword ? "text" : "password"} 
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="block w-full rounded-lg border border-gray-300 bg-white py-3 pl-11 pr-4 text-sm text-gray-900 transition-colors focus:border-[#800000] focus:outline-none focus:ring-1 focus:ring-[#800000]"
+                    className="block w-full rounded-lg border border-gray-300 bg-white py-3 pl-11 pr-12 text-sm text-gray-900 transition-colors focus:border-[#800000] focus:outline-none focus:ring-1 focus:ring-[#800000]"
                   />
+                  {/* Show/Hide Password Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-[#800000] focus:outline-none transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
               </div>
 

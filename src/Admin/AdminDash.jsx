@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { getAuth, signOut } from 'firebase/auth';
 import { getDatabase, ref, onValue, update } from 'firebase/database';
 import { supabase } from '../../supabaseClient'; 
+import RealAdminDash from './RealAdminDash';
+import OverallRecords from './OverallRecords';
 
 // --- ADMIN COMPONENT IMPORTS ---
 import UserList from './Userlist';
@@ -12,12 +14,9 @@ import {
   GraduationCap,
   UserCircle,
   BarChart3,
-  CheckCircle,
-  XCircle,
   LogOut,
   Menu,
   Camera,
-  Shield
 } from 'lucide-react';
 
 const AdminDash = () => {
@@ -119,14 +118,12 @@ const AdminDash = () => {
     }
   };
 
-  // --- ADMINISTRATOR NAVIGATION ITEMS ---
+  // --- ADMINISTRATOR NAVIGATION ITEMS (Removed Eligible/Not Eligible) ---
   const navItems = [
     { id: 'dashboard', icon: <Home className="h-[18px] w-[18px]" />, label: 'Dashboard' },
     { id: 'student-mgmt', icon: <GraduationCap className="h-[18px] w-[18px]" />, label: 'Student Management' },
     { id: 'educator-mgmt', icon: <UserCircle className="h-[18px] w-[18px]" />, label: 'Educator Management' },
-    { id: 'records', icon: <BarChart3 className="h-[18px] w-[18px]" />, label: 'Overall Records' },
-    { id: 'eligible', icon: <CheckCircle className="h-[18px] w-[18px]" />, label: 'Eligible' },
-    { id: 'not-eligible', icon: <XCircle className="h-[18px] w-[18px]" />, label: 'Not Eligible' }
+    { id: 'records', icon: <BarChart3 className="h-[18px] w-[18px]" />, label: 'Overall Records' }
   ];
 
   // Helper to get dynamic page titles for the header
@@ -307,19 +304,13 @@ const AdminDash = () => {
             <div className="mx-auto w-full max-w-7xl">
               
               {/* Insert Admin Components Here based on activeTab state */}
-              {activeTab === 'dashboard' && (
-                <div className="flex items-center justify-center h-64 border-2 border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-gray-400 font-medium">Dashboard Overview Stats Coming Soon</p>
-                </div>
-              )}
+             {activeTab === 'dashboard' && <RealAdminDash fullName={fullName} />}
               
               {activeTab === 'student-mgmt' && <UserList />}
               
               {activeTab === 'educator-mgmt' && <EduList />}
               
-              {activeTab === 'records' && <></>}
-              {activeTab === 'eligible' && <></>}
-              {activeTab === 'not-eligible' && <></>}
+                {activeTab === 'records' && <OverallRecords />}
 
             </div>
           </div>

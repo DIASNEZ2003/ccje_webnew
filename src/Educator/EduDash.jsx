@@ -11,7 +11,7 @@ import ManageDiag from './ManageDiag';
 import PracticeTest from './PracticeTest';
 import DevUpload from './ManageReview';
 import RealEduDash from './RealEduDash';
-
+import OverallRecords from './OverallRecords';
 import {
   Home,
   Calendar,
@@ -43,13 +43,57 @@ const EduDash = () => {
   const [profileImage, setProfileImage] = useState(null);
   const [uploading, setUploading] = useState(false);
 
+  // --- REALTIME DASHBOARD STATS ---
+  const [dashStats, setDashStats] = useState({
+    totalStudents: 0,
+    eligibleCount: 0,
+    highestRate: 0,
+    avgPerformance: 0
+  });
+
+  // --- SCORE CALCULATION LOGIC ---
+  const getScoreStats = (progressData) => {
+    let correct = 0;
+    let totalItems = 0;
+    if (!progressData) return { percentage: 0, total: 0 };
+
+    const findScores = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      if ('correct' in obj && 'wrong' in obj) {
+        correct += (Number(obj.correct) || 0);
+        totalItems += (Number(obj.correct) || 0) + (Number(obj.wrong) || 0);
+      } else if ('score' in obj && 'total' in obj && 'setName' in obj) {
+        correct += (Number(obj.score) || 0);
+        totalItems += (Number(obj.total) || 0);
+      } else {
+        Object.values(obj).forEach(val => findScores(val));
+      }
+    };
+
+    findScores(progressData);
+    const percentage = totalItems > 0 ? Math.round((correct / totalItems) * 100) : 0;
+    return { percentage, total: totalItems };
+  };
+
+  const getFinalExamStats = (user) => {
+    const finalData = user.live_exams?.final_quiz || user.diagnostic_exam_progress || user.final_exam_progress || user.final_exam_score;
+    if (!finalData) return { percentage: 0, total: 0 };
+    if (typeof finalData === 'number') return { percentage: finalData, total: 100 };
+    return getScoreStats(finalData);
+  };
+
   // --- DATA FETCHING ---
   useEffect(() => {
+    let unsubscribeUser;
+    let unsubscribeAllUsers;
+
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
         setUserUID(user.uid);
+        
+        // 1. Fetch current educator profile
         const userRef = ref(db, `users/${user.uid}`);
-        const unsubscribeUser = onValue(userRef, (snapshot) => {
+        unsubscribeUser = onValue(userRef, (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.val();
             setProfileImage(data.profileImage || data.profilePicture || null);
@@ -58,15 +102,55 @@ const EduDash = () => {
             const displayValue = data.fullName || firstLast || nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
             setFullName(displayValue);
           }
+        });
+
+        // 2. Fetch REAL-TIME Stats for the Dashboard
+        const allUsersRef = ref(db, 'users');
+        unsubscribeAllUsers = onValue(allUsersRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const allUsersData = snapshot.val();
+            let studentCount = 0;
+            let eligible = 0;
+            let highest = 0;
+            let totalPct = 0;
+            let takenExamCount = 0;
+
+            Object.values(allUsersData).forEach((u) => {
+              // Only count active regular students
+              if (u.role !== 'admin' && u.role !== 'educator' && (!u.status || u.status === 'active')) {
+                studentCount++;
+                const stats = getFinalExamStats(u);
+                
+                if (stats.total > 0) {
+                  takenExamCount++;
+                  totalPct += stats.percentage;
+                  if (stats.percentage > highest) highest = stats.percentage;
+                  if (stats.percentage >= 75) eligible++;
+                }
+              }
+            });
+
+            setDashStats({
+              totalStudents: studentCount,
+              eligibleCount: eligible,
+              highestRate: highest,
+              avgPerformance: takenExamCount > 0 ? Math.round(totalPct / takenExamCount) : 0
+            });
+          }
           setLoading(false);
         });
-        return () => unsubscribeUser();
+
       } else {
         navigate('/');
         setLoading(false);
       }
     });
-    return () => unsubscribeAuth();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUser) unsubscribeUser();
+      if (unsubscribeAllUsers) unsubscribeAllUsers();
+    };
   }, [auth, db, navigate]);
 
   // --- SUPABASE IMAGE UPLOAD ---
@@ -108,7 +192,7 @@ const EduDash = () => {
     }
   };
 
-  // --- EDUCATOR NAVIGATION ITEMS (REMOVED ELIGIBLE/NOT-ELIGIBLE) ---
+  // --- EDUCATOR NAVIGATION ITEMS ---
   const navItems = [
     { id: 'dashboard', icon: <Home className="h-[18px] w-[18px]" />, label: 'Dashboard' },
     { id: 'schedule-exam', icon: <Calendar className="h-[18px] w-[18px]" />, label: 'Schedule Exam' },
@@ -226,14 +310,14 @@ const EduDash = () => {
 
           <div className="flex-1 overflow-y-auto p-8">
             <div className="mx-auto w-full max-w-7xl">
-              {activeTab === 'dashboard' && <RealEduDash fullName={fullName} />}
+              {/* NOTE: We are passing dashStats to RealEduDash! */}
+              {activeTab === 'dashboard' && <RealEduDash fullName={fullName} stats={dashStats} />}
               {activeTab === 'schedule-exam' && <Scheduler />}
               {activeTab === 'student-mgmt' && <UserList />}
               {activeTab === 'manage-diagnostic' && <ManageDiag />}
               {activeTab === 'manage-practice' && <PracticeTest />}
               {activeTab === 'manage-review' && <DevUpload />}
-              {/* Overall Records is currently empty as per your original code */}
-              {activeTab === 'records' && <div className="text-center py-10 text-gray-500">Records View Coming Soon</div>}
+              {activeTab === 'records' && <OverallRecords />}
             </div>
           </div>
         </main>
