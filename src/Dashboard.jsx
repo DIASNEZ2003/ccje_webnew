@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getAuth, signOut } from 'firebase/auth';
 import { getDatabase, ref, onValue, update } from 'firebase/database';
 import { supabase } from '../supabaseClient'; 
+import ExamResults from './ExamResults'; 
 
 import Areas from './Areas'; 
 
@@ -14,7 +15,9 @@ import {
   LogOut,
   Menu,
   Camera,
-  ShieldAlert
+  ShieldAlert,
+  Lightbulb,
+  CheckCircle
 } from 'lucide-react';
 
 const Dashboard = () => {
@@ -168,8 +171,6 @@ const Dashboard = () => {
 
         {/* ══════════════════════════════════════════
             S I D E B A R
-            • Auto-collapses to icon-strip on exam start
-            • Goes grayscale + pointer-events:none
         ═══════════════════════════════════════════ */}
         <aside
           className={`
@@ -180,8 +181,6 @@ const Dashboard = () => {
             ${examLocked ? 'sidebar-exam-locked' : 'sidebar-exam-unlocked'}
           `}
         >
-
-          {/* ── Top: Logo + Toggle ── */}
           <div className={`flex h-20 shrink-0 items-center border-b border-gray-100 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-6'}`}>
             <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'}`}>
               <img src="/logo.png" alt="CCJE Logo" className="h-9 w-auto shrink-0 object-contain" />
@@ -197,7 +196,6 @@ const Dashboard = () => {
             </button>
           </div>
 
-          {/* ── Profile Area ── */}
           <div className={`flex flex-col items-center border-b border-gray-100 py-8 bg-gradient-to-b from-white to-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-6'}`}>
             <div className="relative group">
               <button
@@ -237,7 +235,6 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* ── Nav Links ── */}
           <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
             {!sidebarCollapsed && (
               <div className="mb-4 px-2 text-[11px] font-bold uppercase tracking-widest text-gray-400">
@@ -272,19 +269,14 @@ const Dashboard = () => {
             })}
           </nav>
 
-          {/* ── Exam lock pill — only visible when collapsed + locked ── */}
           {examLocked && sidebarCollapsed && (
             <div className="flex justify-center pb-3">
-              <div
-                className="w-9 h-9 rounded-xl bg-gray-200 flex items-center justify-center"
-                title="Exam in progress"
-              >
+              <div className="w-9 h-9 rounded-xl bg-gray-200 flex items-center justify-center" title="Exam in progress">
                 <ShieldAlert className="w-4 h-4 text-gray-400" />
               </div>
             </div>
           )}
 
-          {/* ── Exam lock banner — only visible when expanded + locked ── */}
           {examLocked && !sidebarCollapsed && (
             <div className="mx-4 mb-3 flex items-center gap-2 rounded-xl border border-gray-300 bg-gray-100 px-3 py-2.5">
               <ShieldAlert className="w-4 h-4 text-gray-500 shrink-0" />
@@ -295,7 +287,6 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* ── Sign Out ── */}
           <div className="p-4 bg-gray-50/50">
             <button
               onClick={handleLogout}
@@ -337,8 +328,89 @@ const Dashboard = () => {
           <div className="flex-1 overflow-y-auto p-8">
             <div className="mx-auto w-full max-w-7xl">
 
-              {activeTab === 'home' && <>{/* <LandingPages /> */}</>}
+              {/* ════ OVERVIEW TAB ════ */}
+              {activeTab === 'home' && (
+                <div className="space-y-5">
+                  
+                  {/* Smaller Hero Banner */}
+                  <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#800000] to-[#b30000] p-5 md:p-6 text-white shadow-sm">
+                    <div className="relative z-10">
+                      <h2 className="text-xl md:text-2xl font-bold tracking-tight mb-1.5">Welcome to the Portal, {fullName}!</h2>
+                      <p className="text-[#ffcccc] max-w-2xl text-xs leading-relaxed">
+                        The CCJE License Management System is designed to help you prepare effectively for your upcoming licensure examinations. Use this platform to take simulated live exams, review your subject competencies, and track your overall readiness.
+                      </p>
+                    </div>
+                    {/* Abstract decorative background element */}
+                    <div className="absolute -right-5 -top-5 h-48 w-48 rounded-full bg-white opacity-5 blur-3xl" />
+                    <div className="absolute -bottom-5 right-10 h-32 w-32 rounded-full bg-white opacity-10 blur-2xl" />
+                  </div>
 
+                  {/* Smaller Quick Tips Grid */}
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
+                      <Lightbulb className="h-4 w-4 text-yellow-500" />
+                      Tips for Success
+                    </h3>
+                    
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {/* Tip 1 */}
+                      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+                        <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                          <BookOpen className="h-4 w-4" />
+                        </div>
+                        <h4 className="mb-1 text-xs font-bold text-gray-900">1. Take Live Exams</h4>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Navigate to the "Licensure Areas" tab to find active exam schedules. Ensure you are in a quiet environment before starting an assessment.
+                        </p>
+                      </div>
+
+                      {/* Tip 2 */}
+                      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+                        <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                          <ShieldAlert className="h-4 w-4" />
+                        </div>
+                        <h4 className="mb-1 text-xs font-bold text-gray-900">2. Strict Anti-Cheat Policy</h4>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Once an exam begins, your dashboard is locked. Switching tabs or copying text will be recorded as violations and may cause auto-submission.
+                        </p>
+                      </div>
+
+                      {/* Tip 3 */}
+                      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+                        <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-green-50 text-green-600">
+                          <BarChart3 className="h-4 w-4" />
+                        </div>
+                        <h4 className="mb-1 text-xs font-bold text-gray-900">3. Monitor Your Progress</h4>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          After submitting an exam, visit "Exam Results" to review your scores. Identify which specific subjects require more focus.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Smaller System Guidelines */}
+                  <div className="mt-4 rounded-xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm">
+                    <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-900">System Guidelines</h3>
+                    <ul className="space-y-2.5 text-xs text-gray-600">
+                      <li className="flex items-start gap-2.5">
+                        <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
+                        <span><strong>Profile Accuracy:</strong> Please ensure your profile picture is updated and clearly shows your face. This may be used for identity verification.</span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
+                        <span><strong>Stable Connection:</strong> A reliable internet connection is highly recommended. The system is designed to save progress during accidental disconnects.</span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
+                        <span><strong>Technical Support:</strong> If you encounter technical issues or missing exam sets, immediately report the incident to your educator or administrator.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                </div>
+              )}
+
+              {/* ════ LICENSURE AREAS TAB ════ */}
               {activeTab === 'areas' && (
                 <Areas
                   userUID={userUID}
@@ -347,7 +419,10 @@ const Dashboard = () => {
                 />
               )}
 
-              {activeTab === 'results' && <>{/* <Records /> */}</>}
+              {/* ════ EXAM RESULTS TAB ════ */}
+              {activeTab === 'results' && (
+                <ExamResults userUID={userUID} /> 
+              )}
 
             </div>
           </div>
